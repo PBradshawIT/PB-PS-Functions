@@ -338,6 +338,18 @@ Function Install-O365([String] $SiteCode = "Generic"){
 		$Shortcut.Save()
 }
 
+Function Install-ChocoApps {
+	Install-Choco
+		choco install adobereader
+		choco install googlechrome
+		choco install 7-zip
+		choco install dotnetfx
+		choco install microsoft-edge
+		choco install zoom
+		choco install microsoft-windows-terminal
+
+}
+
 Function Install-WinGet {
 <#
 	.SYNOPSIS
