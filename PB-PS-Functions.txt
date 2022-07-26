@@ -340,13 +340,13 @@ Function Install-O365([String] $SiteCode = "Generic"){
 
 Function Install-ChocoApps {
 	Install-Choco
-		choco install adobereader
-		choco install googlechrome
-		choco install 7-zip
-		choco install dotnetfx
-		choco install microsoft-edge
-		choco install zoom
-		choco install microsoft-windows-terminal
+		choco install adobereader -y
+		choco install googlechrome -y
+		choco install 7-zip -y
+		choco install dotnetfx -y
+		choco install microsoft-edge -y
+		choco install zoom -y
+		choco install microsoft-windows-terminal -y
 
 }
 
