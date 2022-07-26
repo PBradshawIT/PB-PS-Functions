@@ -96,71 +96,6 @@ Function Backup-LastUser {
 	Write-Host "`nTry the command Restore-LastUser"
 }
 
-Function Connect-O365Exchange {
-		If (-not (Get-Command Connect-ExchangeOnline -ErrorAction SilentlyContinue)) {
-			Write-Host "Installing the Exchange Online Management module"
-			Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-			Install-Module -Name ExchangeOnlineManagement -AllowClobber -Force
-			$ModVer = (Get-Command Connect-ExchangeOnline).Version
-			If ($ModVer) {
-				Write-Host "Exchange Online Management module version $ModVer has been installed."
-			} Else {
-				Write-Host "Exchange Online Management module failed to install."
-				Break
-			}
-		} Else {
-			$Readhost = 'N'
-			$Readhost = Read-Host "Do you want to check for module updates? This should be done periodically. `n(y/N)"
-			Switch ($ReadHost)
-			{
-				Y {
-					$ModVer = (Get-Command Connect-ExchangeOnline).Version
-					$AvailableModVer = (Find-Module ExchangeOnlineManagement -Repository PSGallery).Version
-					If ($ModVer -ne $AvailableModVer) {
-						Write-host "ExchangeOnlineManagement has an update from $ModVer to $AvailableModVer.`nInstalling the update."
-						Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-						Install-Module -Name ExchangeOnlineManagement -AllowClobber -Force
-					} Else {
-						Write-host "ExchangeOnlineManagement is already up to date at version $AvailableModVer."
-					}
-				}
-				N { Write-Host "Skipping update check." }
-				Default { Write-Host "Skipping update check." }
-			}
-		}
-
-	If ($PSVersionTable.PSEdition -like "Desktop") {
-		Connect-ExchangeOnline -ShowBanner:$false
-
-	} Else {
-		Write-Host -ForegroundColor Green -BackgroundColor DarkRed "Warning! You are using a CORE edition of Powershell. You will need to authenticate via a browser window."
-		Connect-ExchangeOnline -ShowBanner:$false -Device
-	}
-
-	Write-Host -ForegroundColor White -BackgroundColor DarkRed @"
-		Be sure to disconnect the remote PowerShell session when you're finished.
-		If you close the Windows PowerShell window without disconnecting the session,
-		you could use up all the remote PowerShell sessions available to you,
-		and you'll need to wait for the sessions to expire.
-		To disconnect the remote PowerShell session, run the following command.
-
-		Disconnect-O365Exchange
-"@
-
-<#
-	.SYNOPSIS
-		Initiates an Office 365 Exchange connection that is compatible with MFA.
-		This is not compatible with Powershell Core.
-
-	.LINK
-		https://docs.microsoft.com/en-us/powershell/exchange/connect-to-exchange-online-powershell?view=exchange-ps
-
-	.EXAMPLE
-		Connect-O365Exchange
-		Yup, that's it!
-#>
-}
-
 Function Connect-Wifi {
 	param
 		(
@@ -234,153 +169,9 @@ Function Connect-Wifi {
 	Remove-Item -Force $tempProfileXML
 }
 
-Function Disconnect-O365Exchange {
-	Disconnect-ExchangeOnline -Confirm:$false
-}
-
 Function Disable-ITSupportLocalExpiration {
 	Write-Host "Set local ITSupport account to never expire"
 		Set-LocalUser -Name "ITSupport" -PasswordNeverExpires $True
-}
-
-Function Convert-ToSharedMailbox {
-	param
-		(
-			[Parameter(Mandatory=$false)]
-			[string]$DateLeft,
-
-			[Parameter(Mandatory=$false)]
-			[string]$Alias,
-			
-			[Parameter(Mandatory=$false)]
-			[string]$GiveAccessTo,
-			
-			[Parameter(Mandatory=$false)]
-			[ValidateSet('FullAccess','ReadPermission')]
-			[string]$GiveAccessPermission,
-			
-			[Parameter(Mandatory=$false)]
-			[string]$DirectEmailTo,
-			
-			[Parameter(Mandatory=$false)]
-			[switch]$NoAccess = $False,
-			
-			[Parameter(Mandatory=$false)]
-			[switch]$NoReply = $False
-		)
-		
-	If (-not $DateLeft) {$DateLeft = Read-Host "Please enter the date this person left in DDMMMYYY format, i.e. 01JAN2001"}
-	If (-not $Alias) {$Alias = Read-Host "Please enter the persons alias, the part of their email before the @ sign."}
-	$DeletedMailbox = Get-EXOMailbox -SoftDeletedMailbox -Identity $Alias -ErrorAction SilentlyContinue
-	If (-not $DeletedMailbox) {
-		Do {
-			#Active User Check
-			If ($(Get-EXOMailbox -Identity $Alias -ErrorAction SilentlyContinue)) {
-				Write-Host "That mailbox appears to be for an active user.`nPlease delete the user before proceeding..."
-				Break
-			}
-			#Retry the alias
-			$Alias = Read-Host "That alias didn't work. Enter another one or type QUIT to stop:`n"
-			If ($Alias -match "QUIT") {Break}
-			$DeletedMailbox = Get-EXOMailbox -SoftDeletedMailbox -Identity $Alias -ErrorAction SilentlyContinue
-		} While (-not $DeletedMailbox)
-	}
-	
-	If ($DeletedMailbox) {
-		Write-Host "Deleted mailbox found."
-		$Name = $DeletedMailbox.DisplayName
-		$SmtpAddress = $DeletedMailbox.PrimarySmtpAddress
-		Write-Host "Creating Shared Mailbox."
-		New-Mailbox -Name "SHARED $Name LEFT $DateLeft" -Alias $Alias -PrimarySmtpAddress $SmtpAddress -Shared
-		Write-Host "Waiting 30 seconds for mailbox to fully initialize."
-		Start-Sleep -Seconds 30
-		$NewSharedMailbox = Get-EXOMailbox -Identity $Alias
-		$NewSharedMailbox | Select-Object DisplayName, RecipientTypeDetails
-		Write-Host "Restoring deleted mailbox to new shared mailbox."
-		New-MailboxRestoreRequest -SourceMailbox $DeletedMailbox.GUID.GUID -TargetMailbox $NewSharedMailbox.GUID.GUID -AllowLegacyDNMismatch
-		Get-MailboxRestoreRequest | Format-Table
-		Write-Host -ForegroundColor Yellow -BackgroundColor Black "Run Get-MailboxRestoreRequest to see the progress of the restore."
-
-		#Mailbox Permissions
-		If(-not $NoAccess) {
-			Do {
-				If ($GiveAccessPermission) {
-					$Permission = $GiveAccessPermission
-				} Else {
-					$Response = Read-Host -Prompt "Do you want to add any permissions to the shared mailbox? (Y/n)"
-					If (-not $Response) {$Response = "y"}
-					If ($Response -like 'y*') {
-					$Rights = "FullAccess","ReadPermission","QUIT"
-					$Rights | Select-Object @{N='Index'; E={$Rights.IndexOf($_)}}, @{N='Permission'; E={$_}} | Out-Host -Paging -ErrorAction SilentlyContinue
-					$Permission = Read-Host "Please enter the number of the permission you wish to assign."
-					$Permission = $Rights[$Permission]
-					}
-				}
-				If ($Permission -ne "QUIT") {
-					If ($GiveAccessTo) {
-						$AddUser = $GiveAccessTo
-					} Else {
-						$AddUser = Read-Host "Alias of the user to grant access"
-					}
-					If (-not $(Get-EXOMailbox -Identity $AddUser)) {
-						Do {
-							$AddUser = Read-Host "That alias didn't work. Enter another one or type QUIT to stop:`n"
-							If ($AddUser -match "QUIT") {Break}
-						} While (-not $(Get-EXOMailbox -Identity $AddUser))
-					}
-					Write-Host "Giving $AddUser $Permission to the mailbox."
-					$NewSharedMailbox | Add-MailboxPermission -User $AddUser -AccessRights $Permission -InheritanceType All -Verbose
-					$NewSharedMailbox | Get-MailboxPermission | Format-Table
-				} Else { Break }
-			} While ($Response -notlike 'n*')
-		}
-
-		#AutoReply
-		If(-not $NoAccess) {
-			If ($DirectEmailTo) {
-				$ReplyTo = $DirectEmailTo
-			} Else {
-				$Response = Read-Host -Prompt "Do you want to an auto reply? (Y/n)"
-				If (-not $Response) {$Response = "y"}
-				If ($Response -like 'y*') {
-					$ReplyTo = Read-Host "Alias of the user to direct emails to"
-					If (-not $(Get-EXOMailbox -Identity $ReplyTo)) {
-						Do {
-							$ReplyTo = Read-Host "That alias didn't work. Enter another one or type QUIT to stop:`n"
-							If ($ReplyTo -match "QUIT") {Break}
-						} While (-not $(Get-EXOMailbox -Identity $ReplyTo))
-					}
-
-				}
-			}
-			$ReplyTo = Get-EXOMailbox -Identity $ReplyTo
-			$ReplyToName = $ReplyTo.DisplayName
-			$ReplyToEmail = $ReplyTo.PrimarySmtpAddress
-			$NewSharedMailbox | Set-MailboxAutoReplyConfiguration –InternalMessage "$Name is no longer with the organization. Please direct communications to $ReplyToName at $ReplyToEmail" –ExternalMessage "$Name is no longer with the organization. Please direct communications to $ReplyToName at $ReplyToEmail" -Verbose
-			$NewSharedMailbox | Set-MailboxAutoReplyConfiguration -AutoReplyState enabled
-			$NewSharedMailbox | Get-MailboxAutoReplyConfiguration | Select-Object Identity, AutoReplyState, ExternalMessage | Format-List
-		}
-	}
-<#
-	.SYNOPSIS
-		Takes a deleted user, and converts their email to a shared mailbox. Can add permissions and an autoreply.
-	.PARAMETER Alias
-		Please enter the persons alias, the part of their email before the @ sign.
-	.PARAMETER DateLeft
-		Please enter the date this person left in DDMMMYYY format, i.e. 01JAN2001
-	.PARAMETER GiveAccessTo
-		Please enter the alias of the person who needs access to the shared mailbox. Leave blank to be prompted for multiple names.
-	.PARAMETER GiveAccessPermission
-		Please enter the permission level to give. Acceptible values are 'FullAccess' and 'ReadPermission'.
-	.PARAMETER DirectEmailTo
-		Please enter the alias of the person who people should be directed to in the auto reply.
-	.PARAMETER NoAccess
-		Add this switch if you do not want to be prompted for giving access.
-	.PARAMETER NoReply
-		Add this switch if you do not want to be prompted for setting up an autoreply.
-	.EXAMPLE
-		Convert-ToSharedMailbox -DateLeft "30SEP2021" -Alias cscippio
-	#>
 }
 
 Function Disable-DailyReboot {
@@ -435,29 +226,6 @@ Function Disconnect-AllUsers {
 	}
 }
 
-Function Enable-O365AuditLog {
-<#
-	.SYNOPSIS
-		Sets auditig on all mailboxes in the organization as well as sets the default setting.
-
-	.LINK
-		https://docs.microsoft.com/en-us/microsoft-365/compliance/enable-mailbox-auditing
-
-	.LINK
-		https://support.microsoft.com/en-us/help/4026501/office-auditing-in-office-365-for-admins
-#>
-	If (Get-Command Get-Mailbox -ErrorAction SilentlyContinue){
-		Write-Host "Enabling Auditing for all existing mailboxes"
-		Get-Mailbox -ResultSize Unlimited -Filter {RecipientTypeDetails -eq "UserMailbox"} | Set-Mailbox -AuditEnabled $true -Verbose
-		Write-Host "Enabling Auditing for the organization as a whole"
-		Set-OrganizationConfig -AuditDisabled $False
-		Write-Host "Checking the orginazation config. If auditing is enabled, this setting should show as 'False'"
-		Get-OrganizationConfig | Format-List AuditDisabled
-	} Else {
-		Write-Host "You are not connected to an exchange server. Try the command 'Connect-O365Exchange'"
-	}
-}
-
 Function Enable-Sleep {
 	If (Get-Process -Name "DontSleep_x64_p") {
 		Write-Host "Resuming power management plan"
@@ -483,23 +251,6 @@ Function Enable-SSL {
 Function Expand-Terminal {
 	mode con: cols=120 lines=60
 	$host.UI.RawUI.BufferSize = New-Object System.Management.Automation.Host.Size(120,10240)
-}
-
-Function Export-LDAPSCertificate {
-	<#
-	.SYNOPSIS
-		If the server responds to requests on the LDAPS port 636, the function will attempt to isolate the Certificate in use and export it to C:\PB\LDAPScerExport.cer
-	#>
-	If (Test-NetConnection -ComputerName localhost -Port 636 -InformationLevel Quiet) {
-		$Cert = (Get-ChildItem -Path Cert:\LocalMachine -Recurse | Where-Object {$_.NotAfter -Gt (Get-Date) -and $_.Subject -like "*$env:computername.$env:userdnsdomain*" -and $_.NotAfter -eq ($_.NotBefore).AddYears(1)})
-		$Cert | Select-Object Subject, NotBefore, NotAfter | Format-List
-		$Path = "C:\PB\LDAPScerExport.cer"
-		Write-Host "Exporting current likely LDAPS Certificate to $Path"
-		$Cert | Export-Certificate -Type cer -FilePath C:\PB\LDAPScerExport.cer -Force | Out-Null
-	} Else {
-		Write-Warning "This computer does not appear to be serving LDAPS requests."
-		Break
-	}
 }
 
 Function Get-PBPS {
