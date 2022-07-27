@@ -342,7 +342,7 @@ Function Install-ChocoApps {
 	Install-Choco
 		choco install adobereader -y
 		choco install googlechrome -y
-		choco install 7-zip -y
+		choco install 7zip -y
 		choco install dotnetfx -y
 		choco install microsoft-edge -y
 		choco install zoom -y
@@ -462,6 +462,18 @@ Function Install-WinGetApps {
 	Winget install -e --id Microsoft.WindowsTerminal -h
 }
 
+Function Install-SCAccess {
+	param
+	(
+		[string]$SCDownloadURL
+	)
+	Write-Host "Downloading ScreenConnect"
+	Invoke-WebRequest $SCDownloadURL -OutFile C:\PB\scinstall.msi
+	Write-Host "Installing ScreenConnect Agent Silently"
+	msiexec.exe /i C:\pb\scinstall.msi /quiet /qn
+
+}
+
 Function Invoke-Win10Decrap {
 	Write-Host "Windows 10 Decrapifier"
 	$progressPreference = 'silentlyContinue'
@@ -478,7 +490,7 @@ Function Join-Domain {
 		[Parameter(Mandatory=$true)]
 		[string]$Username,
 		[Parameter(Mandatory=$true)]
-		$Password
+		[string]$Password
 	)
 	Write-Host "Join Domain"
 	$Password = $Password | ConvertTo-SecureString -asPlainText -Force
